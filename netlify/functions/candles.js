@@ -1,4 +1,3 @@
-// Relay tonto: solo reenvía a Bitget. No contiene lógica del usuario.
 exports.handler = async (event) => {
   const cors = {
     "content-type": "application/json",
@@ -14,30 +13,40 @@ exports.handler = async (event) => {
 
   const q = event.queryStringParameters || {};
   const symbol   = (q.symbol   || "BTCUSDT").toUpperCase();
-  const interval = q.interval  || "1h";
+  let interval   = q.interval  || "1h"; // Recibimos el intervalo del HTML
   const limit    = q.limit     || "100";
 
-  // Validación mínima (no es lógica de trading, solo sanidad)
-  if (!/^[A-Z0-9]{4,20}$/.test(symbol)) {
-    return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "symbol inválido" }) };
-  }
-  const allowedIntervals = ["15m","30m","1h","2h","4h","12h","1d","3d","1w","2w","1M"];
-  if (!allowedIntervals.includes(interval)) {
-    return { statusCode: 400, headers: cors, body: JSON.stringify({ error: "interval inválido" }) };
-  }
-  const lim = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 200);
+  // TRADUCCIÓN DE INTERVALOS: El HTML envía 15m, 1h, 1d, etc.
+  // Bitget v2 espera formatos específicos (ej. 1H, 1D, 15m, etc.)
+  const bitgetIntervals = {
+    "1m": "1m", "3m": "3m", "5m": "5m", "15m": "15m", "30m": "30m",
+    "1h": "1H", "2h": "2H", "4h": "4H", "6h": "6H", "12h": "12H",
+    "1d": "1D", "3d": "3D", "1w": "1W", "1M": "1M"
+  };
 
-  const url = `https://api.bitget.com/api/v2/spot/market/candles`
-            + `?symbol=${encodeURIComponent(symbol)}`
-            + `&interval=${encodeURIComponent(interval)}`
-            + `&limit=${lim}`;
+  // Si el intervalo recibido está en nuestro diccionario, lo traducimos.
+  // Si no, lo dejamos igual (por si acaso).
+  const bitgetInterval = bitgetIntervals[interval] || interval;
+
+  const url = `https://api.bitget.com/api/v2/spot/market/candles?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(bitgetInterval)}&limit=${limit}`;
 
   try {
     const r = await fetch(url, {
-      headers: { "User-Agent": "EvM-Relay/1.0", "Accept": "application/json" }
+      headers: { 
+        "User-Agent": "EvM-Relay/1.0", 
+        "Accept": "application/json" 
+      }
     });
+    
     const body = await r.text();
-    return { statusCode: r.status, headers: cors, body };
+    
+    // Devolvemos la respuesta de Bitget (sea éxito o error) con cabeceras CORS
+    return { 
+      statusCode: r.status, 
+      headers: cors, 
+      body 
+    };
+    
   } catch (e) {
     return {
       statusCode: 502,
